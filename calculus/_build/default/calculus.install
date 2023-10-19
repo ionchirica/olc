@@ -1,8 +1,0 @@
-lib: [
-  "_build/install/default/lib/calculus/META"
-  "_build/install/default/lib/calculus/dune-package"
-  "_build/install/default/lib/calculus/opam"
-]
-bin: [
-  "_build/install/default/bin/calculus"
-]
