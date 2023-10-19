@@ -1,0 +1,6 @@
+(executable
+ (public_name calculus)
+ (name main)
+ (libraries calculus)
+ (preprocess (pps ppx_deriving.show)))
+
