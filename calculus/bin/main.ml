@@ -92,10 +92,12 @@ module Lambda = struct
        expression
     | App (expr, args) ->
        let lambdaVar, lambdaBody = eval expr |> Expr.asAbs in
+       (* evaluate the arguments and not delay its evaluation until needed *)
+       let valArg = eval args in
        (* \x. x + 1 *)
        (* lambdaVar = x, lambdaExpr = x + 1 *)
        (* perform substitution *)
-       Expr.substitute lambdaVar args lambdaBody |> eval
+       Expr.substitute lambdaVar valArg lambdaBody |> eval
     | Var _ -> expression (* free occurence with no value *)
 
 end
@@ -111,6 +113,13 @@ let lazyFixpoint =
   let innerAbs = Lambda.Abs( "x", App( Var "f", App( Var "x", Var("x") ) ) ) in
   Lambda.Abs( "f", App( innerAbs, innerAbs ) )
 
+let eagerFixpoint =
+  (* y = \f. (\x. f( \v. x x v )) (\x. f(x x v)) *)
+  let indirection = Lambda.Abs( "v", App( App( Var "x", Var "x" ), Var "v" ) ) in
+  let innerAbs = Lambda.Abs( "x", App( Var "f", indirection ) ) in
+  Lambda.Abs( "f", App( innerAbs, innerAbs ) )
+
+
 let fibStep =
   (* \f. x. if n < 2 then 1 else f (x - 1) + f ( x- 2)*)
   let xMinus n = Lambda.Builtin( Arithmetic( Sub, Var "x", Lit n ) ) in
@@ -119,7 +128,7 @@ let fibStep =
   Lambda.Abs( "f", Lambda.Abs( "x", Cond( Lambda.Builtin( Comparison (Less, Var "x", Lit 2) ), Lit 1, falseBranch ) ) )
 
 let fib (n: int) =
-  let fn = Lambda.App( lazyFixpoint, fibStep ) in
+  let fn = Lambda.App( eagerFixpoint, fibStep ) in
   Lambda.eval (Lambda.App( fn, Lit n )) |> Lambda.Expr.asInt
 
 
