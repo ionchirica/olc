@@ -5,20 +5,14 @@
 (generate_opam_files true)
 
 (source
- (github username/reponame))
+ (github ionchirica/olc))
 
-(authors "Author Name")
-
-(maintainers "Maintainer Name")
-
-(license LICENSE)
-
-(documentation https://url/to/documentation)
+(authors "Ion Chirica")
 
 (package
  (name calculus)
  (synopsis "A short synopsis")
- (description "A longer description")
+ (description "OCaml Lambda Calculus")
  (depends ocaml dune)
  (tags
   (topics "to describe" your project)))

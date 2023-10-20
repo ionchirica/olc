@@ -1,4 +1,5 @@
-(executable
+(env (dev (flags (:standard -warn-error -A))))
+  (executable
  (public_name calculus)
  (name main)
  (libraries calculus)
