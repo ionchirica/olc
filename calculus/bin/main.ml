@@ -1,3 +1,4 @@
+open Map
 
 exception Invalid_argument of string
 
@@ -47,66 +48,68 @@ module Lambda = struct
     | Lit of btype               (* Literals *)
     | Builtin of bfn             (* Functions *)
     | Cond of expr * expr * expr (* Conditionals: Pred - True - False *)
-  module Expr = struct
+
+  module VarMap = Map.Make(struct
+                      type t = var
+                      let compare = String.compare
+                    end)
+
+  type value =
+    | Int of int
+    | Closure of closure
+
+  and closure =
+    { environment: value VarMap.t; var: var; body: expr }
+
+  module Value = struct
     let asInt = function
-      | Lit( x ) -> x
-      | _ -> raise( Invalid_argument "Not a number" )
+      | Int( x ) -> x
+      | _ -> raise ( Invalid_argument "Not an integer" )
 
-    let asAbs = function
-      | Abs( var, expr ) -> var, expr
-      | _ -> raise ( Invalid_argument "Not an abstraction" )
-
-    let rec substitute (replaceWhat: var) (replaceFor: expr) (original: expr) =
-      let substituteFn = substitute replaceWhat replaceFor in
-      match original with
-      | Lit _ -> original
-      | Builtin ( Arithmetic( fn, opA, opB ) ) ->
-         Builtin ( Arithmetic (fn, substituteFn opA, substituteFn opB) )
-      | Builtin ( Comparison( fn, opA, opB ) ) ->
-         Builtin ( Comparison (fn, substituteFn opA, substituteFn opB) )
-      | Cond ( pred, t, f ) -> Cond( substituteFn pred, substituteFn t, substituteFn f )
-      | App ( expr, args ) -> App( substituteFn expr, substituteFn args )
-      | Var boundName -> if boundName = replaceWhat then replaceFor else original
-      | Abs ( boundName, body ) ->
-         if boundName = replaceWhat then original
-         else Abs ( boundName, substituteFn body )
+    let asClosure = function
+      | Closure ( c ) -> c
+      | _ -> raise ( Invalid_argument "Not a closure" )
   end
 
-  let rec eval ( expression: expr ) : expr =
+
+  let rec eval (environment: value VarMap.t) ( expression: expr ) : value =
     match expression with
-    | Lit( _ ) -> expression
+    | Lit( i ) -> Int i
     | Builtin ( Arithmetic( fn, opA, opB ) ) ->
-       let valA = eval opA |> Expr.asInt in
-       let valB = eval opB |> Expr.asInt in
-       Lit( ArithmeticFn.apply fn valA valB  )
+       let valA = eval environment opA |> Value.asInt in
+       let valB = eval environment opB |> Value.asInt in
+       Int( ArithmeticFn.apply fn valA valB )
     | Builtin ( Comparison( fn, lhs, rhs ) ) ->
-       let lhs = eval lhs |> Expr.asInt in
-       let rhs = eval rhs |> Expr.asInt in
-       Lit( ComparisonFn.apply fn lhs rhs )
+       let lhs = eval environment lhs |> Value.asInt in
+       let rhs = eval environment rhs |> Value.asInt in
+       Int( ComparisonFn.apply fn lhs rhs )
     | Cond ( pred, trueBranch, falseBranch ) ->
-       let valPred = eval pred |> Expr.asInt in
-       if valPred <> 0 then eval trueBranch else eval falseBranch
-    | Abs _ ->
-       (* option 1: reduce the body, return simplified *)
-       (* option 2: return as is *)
-       expression
+       let valPred = eval environment pred |> Value.asInt in
+       if valPred <> 0 then eval environment trueBranch else eval environment falseBranch
+    | Abs (var, body) ->
+       Closure { environment = environment; var = var; body = body }
     | App (expr, args) ->
-       let lambdaVar, lambdaBody = eval expr |> Expr.asAbs in
+       let {environment = closureEnv; var = closureVar; body = closureBody } = eval environment expr |> Value.asClosure in
        (* evaluate the arguments and not delay its evaluation until needed *)
-       let valArg = eval args in
+       let valArg = eval environment args in
        (* \x. x + 1 *)
        (* lambdaVar = x, lambdaExpr = x + 1 *)
        (* perform substitution *)
-       Expr.substitute lambdaVar valArg lambdaBody |> eval
-    | Var _ -> expression (* free occurence with no value *)
+
+       let newEnv = VarMap.add closureVar valArg closureEnv in
+       eval newEnv closureBody
+
+      (* raises Invalid Argument if Option is None *)
+    | Var name -> VarMap.find_opt name environment |> Option.get
 
 end
 
 
 let subApply (frst: int) (snd: int): int =
+
   let subFn = Lambda.Abs( "x", Lambda.Abs( "y", Builtin( Arithmetic( Sub, Var "x", Var "y") ) ) ) in
   let subApp = Lambda.App( Lambda.App( subFn, Lit frst), Lit snd ) in
-  Lambda.eval subApp |> Lambda.Expr.asInt
+  Lambda.eval (Lambda.VarMap.empty) subApp |> Lambda.Value.asInt
 
 let lazyFixpoint =
   (* y = \f. (\x. f (x x)) (\x. f (x x)) *)
@@ -121,7 +124,7 @@ let eagerFixpoint =
 
 
 let fibStep =
-  (* \f. x. if n < 2 then 1 else f (x - 1) + f ( x- 2)*)
+  (* \f. x. if n < 2 then 1 else f (x - 1) + f ( x - 2)*)
   let xMinus n = Lambda.Builtin( Arithmetic( Sub, Var "x", Lit n ) ) in
   let falseBranch = Lambda.Builtin( Arithmetic( Add, App( Var "f", xMinus 1), App( Var "f", xMinus 2) )) in
 
@@ -129,7 +132,7 @@ let fibStep =
 
 let fib (n: int) =
   let fn = Lambda.App( eagerFixpoint, fibStep ) in
-  Lambda.eval (Lambda.App( fn, Lit n )) |> Lambda.Expr.asInt
+  Lambda.eval Lambda.VarMap.empty (Lambda.App( fn, Lit n )) |> Lambda.Value.asInt
 
 
 let () =
@@ -137,6 +140,6 @@ let () =
   let incFn = Lambda.Abs( "x", Builtin( Arithmetic( Add, Var("x"), Lit 1 ) )) in
   let incrApp( n: int ) = Lambda.App( incFn, Lit(n)) in
 
-  Printf.printf "%d\n" (Lambda.eval(incrApp(22)) |> Lambda.Expr.asInt);
+  Printf.printf "%d\n" (Lambda.eval Lambda.VarMap.empty (incrApp(22)) |> Lambda.Value.asInt);
   Printf.printf "%d\n" (subApply 60 20);
   Printf.printf "%d\n" (fib 30 );
