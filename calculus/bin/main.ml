@@ -48,6 +48,7 @@ module Lambda = struct
     | Lit of btype               (* Literals *)
     | Builtin of bfn             (* Functions *)
     | Cond of expr * expr * expr (* Conditionals: Pred - True - False *)
+    | Bind of bool * var * expr * expr
 
   module VarMap = Map.Make(struct
                       type t = var
@@ -57,9 +58,10 @@ module Lambda = struct
   type value =
     | Int of int
     | Closure of closure
+    | Blackhole
 
   and closure =
-    { environment: value VarMap.t; var: var; body: expr }
+    { mutable environment: value VarMap.t; var: var; body: expr }
 
   module Value = struct
     let asInt = function
@@ -86,6 +88,19 @@ module Lambda = struct
     | Cond ( pred, trueBranch, falseBranch ) ->
        let valPred = eval environment pred |> Value.asInt in
        if valPred <> 0 then eval environment trueBranch else eval environment falseBranch
+    | Bind (recursive, var, body, expr) ->
+       let bodyEnv = if not recursive then environment else VarMap.add var Blackhole environment in
+       let evald = eval bodyEnv body in
+       let bodyVal =
+         match evald with
+         | Closure c as v ->
+            let closureEnv = VarMap.add var v environment in
+            c.environment <- closureEnv;
+            v
+         | _ -> evald
+       in
+       let exprEnv = VarMap.add var bodyVal environment in
+       eval exprEnv expr
     | Abs (var, body) ->
        Closure { environment = environment; var = var; body = body }
     | App (expr, args) ->
@@ -134,6 +149,21 @@ let fib (n: int) =
   let fn = Lambda.App( eagerFixpoint, fibStep ) in
   Lambda.eval Lambda.VarMap.empty (Lambda.App( fn, Lit n )) |> Lambda.Value.asInt
 
+let fibDirect (n: int) =
+   (* \f. x. if n < 2 then 1 else f (x - 1) + f ( x - 2)*)
+  let xMinus n = Lambda.Builtin( Arithmetic( Sub, Var "x", Lit n ) ) in
+  let falseBranch = Lambda.Builtin( Arithmetic( Add, App( Var "fib", xMinus 1), App( Var "fib", xMinus 2) )) in
+  Lambda.eval
+    Lambda.VarMap.empty
+    (Lambda.Bind( true,
+                  "fib",
+                  Lambda.Abs( "x",
+                              Cond(
+                                  Lambda.Builtin(
+                                      Comparison (Less, Var "x", Lit 2) ),
+                                  Lit 1,
+                                  falseBranch ) ),
+                  Lambda.App( Var "fib", Lit n ))) |> Lambda.Value.asInt
 
 let () =
 
@@ -143,3 +173,4 @@ let () =
   Printf.printf "%d\n" (Lambda.eval Lambda.VarMap.empty (incrApp(22)) |> Lambda.Value.asInt);
   Printf.printf "%d\n" (subApply 60 20);
   Printf.printf "%d\n" (fib 30 );
+  Printf.printf "%d\n" (fibDirect 30);
