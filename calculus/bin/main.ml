@@ -101,6 +101,27 @@ module Lambda = struct
 end
 
 
+let subApply (frst: int) (snd: int): int =
+  let subFn = Lambda.Abs( "x", Lambda.Abs( "y", Builtin( Arithmetic( Sub, Var "x", Var "y") ) ) ) in
+  let subApp = Lambda.App( Lambda.App( subFn, Lit frst), Lit snd ) in
+  Lambda.eval subApp |> Lambda.Expr.asInt
+
+let lazyFixpoint =
+  (* y = \f. (\x. f (x x)) (\x. f (x x)) *)
+  let innerAbs = Lambda.Abs( "x", App( Var "f", App( Var "x", Var("x") ) ) ) in
+  Lambda.Abs( "f", App( innerAbs, innerAbs ) )
+
+let fibStep =
+  (* \f. x. if n < 2 then 1 else f (x - 1) + f ( x- 2)*)
+  let xMinus n = Lambda.Builtin( Arithmetic( Sub, Var "x", Lit n ) ) in
+  let falseBranch = Lambda.Builtin( Arithmetic( Add, App( Var "f", xMinus 1), App( Var "f", xMinus 2) )) in
+
+  Lambda.Abs( "f", Lambda.Abs( "x", Cond( Lambda.Builtin( Comparison (Less, Var "x", Lit 2) ), Lit 1, falseBranch ) ) )
+
+let fib (n: int) =
+  let fn = Lambda.App( lazyFixpoint, fibStep ) in
+  Lambda.eval (Lambda.App( fn, Lit n )) |> Lambda.Expr.asInt
+
 
 let () =
 
@@ -108,3 +129,5 @@ let () =
   let incrApp( n: int ) = Lambda.App( incFn, Lit(n)) in
 
   Printf.printf "%d\n" (Lambda.eval(incrApp(22)) |> Lambda.Expr.asInt);
+  Printf.printf "%d\n" (subApply 60 20);
+  Printf.printf "%d\n" (fib 30 );
